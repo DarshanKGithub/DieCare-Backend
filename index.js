@@ -8,86 +8,170 @@ const pool = require('./db'); // Import the database connection
 require('dotenv').config();
 
 const app = express();
-app.use(express.json()); // Middleware to parse JSON bodies
+app.use(express.json());
 app.use(cors());
 
-// Register 
-app.post('/register', async (req, res) => {
-    const { name, email, contact_number, department_name, password, designation, role } = req.body;
+// Middleware to verify JWT
+const verifyToken = (req, res, next) => {
+  const token = req.headers.authorization?.split(' ')[1];
+  if (!token) return res.status(401).json({ message: 'No token provided' });
 
-    try {
-        const userExist = await pool.query('SELECT * FROM users WHERE email = $1', [email]);
-        if (userExist.rows.length > 0) return res.status(400).json({ error: 'User already exists' });
+  try {
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    req.user = decoded;
+    next();
+  } catch (error) {
+    console.log(`[AUTH ERROR] ${error.message}`);
+    res.status(401).json({ message: 'Invalid token' });
+  }
+};
 
-        const hashedPassword = await bcrypt.hash(password, 10);
+// Validate role
+const validRoles = ['hod', 'employee', 'admin'];
+const validateRole = (role) => validRoles.includes(role);
 
-        const newUser = await pool.query(
-            'INSERT INTO users (name, email, contact_number, department_name, password, designation, role) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *',
-            [name, email, contact_number, department_name, hashedPassword, designation, role]
-        );
-       
-        console.log(`[REGISTER SUCCESS] User Registered: ${email}, Role: ${role}`);
-        res.status(201).json({ message: 'User registered successfully', user: newUser.rows[0] });
-        
-    } catch (error) {
-        console.log(`[REGISTER ERROR] ${error.message}`);
-        res.status(500).json({ message: error.message });
-    }
+// Register
+app.post('/register', verifyToken, async (req, res) => {
+  if (req.user.role !== 'admin') return res.status(403).json({ message: 'Admin access required' });
+
+  const { name, email, contact_number, department_name, password, designation, role } = req.body;
+
+  if (!validateRole(role)) return res.status(400).json({ message: 'Invalid role. Must be hod, employee, or admin' });
+
+  try {
+    const userExist = await pool.query('SELECT * FROM users WHERE email = $1', [email]);
+    if (userExist.rows.length > 0) return res.status(400).json({ message: 'User already exists' });
+
+    const hashedPassword = await bcrypt.hash(password, 10);
+
+    const newUser = await pool.query(
+      'INSERT INTO users (name, email, contact_number, department_name, password, designation, role) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id, name, email, contact_number, department_name, designation, role',
+      [name, email, contact_number, department_name, hashedPassword, designation, role]
+    );
+
+    console.log(`[REGISTER SUCCESS] User Registered: ${email}, Role: ${role}`);
+    res.status(201).json({ message: 'User registered successfully', user: newUser.rows[0] });
+  } catch (error) {
+    console.log(`[REGISTER ERROR] ${error.message}`);
+    res.status(500).json({ message: error.message });
+  }
 });
 
 // Login
 app.post('/login', async (req, res) => {
-    const { email, password } = req.body;
+  const { email, password } = req.body;
 
-    try {
-        const user = await pool.query('SELECT * FROM users WHERE email = $1', [email]);
-        if (user.rows.length === 0) return res.status(400).json({ message: "Invalid email or password" });
+  try {
+    const user = await pool.query('SELECT * FROM users WHERE email = $1', [email]);
+    if (user.rows.length === 0) return res.status(400).json({ message: 'Invalid email or password' });
 
-        const validPass = await bcrypt.compare(password, user.rows[0].password);
-        if (!validPass) return res.status(400).json({ message: "Invalid email or password" });
+    const validPass = await bcrypt.compare(password, user.rows[0].password);
+    if (!validPass) return res.status(400).json({ message: 'Invalid email or password' });
 
-        const token = jwt.sign({ userId: user.rows[0].id, role: user.rows[0].role }, process.env.JWT_SECRET, { expiresIn: '1h' });
-  
-        console.log(`[LOGIN SUCCESS] Email: ${email}, Role: ${user.rows[0].role}`);
-        res.json({ message: "Login successful", token });
-    } catch (err) {
-        console.log(`[LOGIN FAILED] Invalid Password for Email: ${email}`);
-        res.status(500).json({ message: err.message });
-    }
+    const token = jwt.sign({ userId: user.rows[0].id, role: user.rows[0].role }, process.env.JWT_SECRET, { expiresIn: '1h' });
+
+    console.log(`[LOGIN SUCCESS] Email: ${email}, Role: ${user.rows[0].role}`);
+    res.json({ message: 'Login successful', token });
+  } catch (error) {
+    console.log(`[LOGIN FAILED] Invalid Password for Email: ${email}`);
+    res.status(500).json({ message: error.message });
+  }
 });
 
 // Admin Login
 app.post('/admin/login', async (req, res) => {
-    const { email, password } = req.body;
+  const { email, password } = req.body;
 
-    try {
-        // Check if the provided email matches the admin email
-        if (email !== process.env.ADMIN_EMAIL) {
-            return res.status(400).json({ message: "Invalid admin email or password" });
-        }
-
-        // Compare the provided password with the hashed admin password
-        const validPass = await bcrypt.compare(password, await bcrypt.hash(process.env.ADMIN_PASSWORD, 10));
-        if (!validPass) {
-            console.log(`[ADMIN LOGIN FAILED] Invalid Password for Email: ${email}`);
-            return res.status(400).json({ message: "Invalid admin email or password" });
-        }
-
-        // Generate JWT token with admin role
-        const token = jwt.sign({ userId: 'admin', role: 'admin' }, process.env.JWT_SECRET, { expiresIn: '1h' });
-
-        console.log(`[ADMIN LOGIN SUCCESS] Email: ${email}, Role: admin`);
-        res.json({ message: "Admin login successful", token });
-    } catch (err) {
-        console.log(`[ADMIN LOGIN ERROR] ${err.message}`);
-        res.status(500).json({ message: err.message });
+  try {
+    if (email !== process.env.ADMIN_EMAIL) {
+      return res.status(400).json({ message: 'Invalid admin email or password' });
     }
+
+    // For plaintext ADMIN_PASSWORD in .env
+    if (password !== process.env.ADMIN_PASSWORD) {
+      console.log(`[ADMIN LOGIN FAILED] Invalid Password for Email: ${email}`);
+      return res.status(400).json({ message: 'Invalid admin email or password' });
+    }
+
+    const token = jwt.sign({ userId: 'admin', role: 'admin' }, process.env.JWT_SECRET, { expiresIn: '1h' });
+
+    console.log(`[ADMIN LOGIN SUCCESS] Email: ${email}, Role: admin`);
+    res.json({ message: 'Admin login successful', token });
+  } catch (error) {
+    console.log(`[ADMIN LOGIN ERROR] ${error.message}`);
+    res.status(500).json({ message: error.message });
+  }
+});
+
+// Fetch Users by Role
+app.get('/users', verifyToken, async (req, res) => {
+  if (req.user.role !== 'admin') return res.status(403).json({ message: 'Admin access required' });
+
+  const { role } = req.query;
+  if (!validateRole(role)) return res.status(400).json({ message: 'Invalid role. Must be hod, employee, or admin' });
+
+  try {
+    const users = await pool.query(
+      'SELECT id, name, email, contact_number, department_name, designation, role FROM users WHERE role = $1',
+      [role]
+    );
+    res.json(users.rows);
+  } catch (error) {
+    console.log(`[FETCH USERS ERROR] ${error.message}`);
+    res.status(500).json({ message: error.message });
+  }
+});
+
+// Update User
+app.put('/users/:id', verifyToken, async (req, res) => {
+  if (req.user.role !== 'admin') return res.status(403).json({ message: 'Admin access required' });
+
+  const { id } = req.params;
+  const { name, email, contact_number, department_name, designation, role } = req.body;
+
+  if (!validateRole(role)) return res.status(400).json({ message: 'Invalid role. Must be hod, employee, or admin' });
+
+  try {
+    const userExist = await pool.query('SELECT * FROM users WHERE id = $1', [id]);
+    if (userExist.rows.length === 0) return res.status(404).json({ message: 'User not found' });
+
+    const updatedUser = await pool.query(
+      'UPDATE users SET name = $1, email = $2, contact_number = $3, department_name = $4, designation = $5, role = $6 WHERE id = $7 RETURNING id, name, email, contact_number, department_name, designation, role',
+      [name, email, contact_number, department_name, designation, role, id]
+    );
+
+    console.log(`[UPDATE USER SUCCESS] User ID: ${id}, Email: ${email}`);
+    res.json({ message: 'User updated successfully', user: updatedUser.rows[0] });
+  } catch (error) {
+    console.log(`[UPDATE USER ERROR] ${error.message}`);
+    res.status(500).json({ message: error.message });
+  }
+});
+
+// Delete User
+app.delete('/users/:id', verifyToken, async (req, res) => {
+  if (req.user.role !== 'admin') return res.status(403).json({ message: 'Admin access required' });
+
+  const { id } = req.params;
+
+  try {
+    const userExist = await pool.query('SELECT * FROM users WHERE id = $1', [id]);
+    if (userExist.rows.length === 0) return res.status(404).json({ message: 'User not found' });
+
+    await pool.query('DELETE FROM users WHERE id = $1', [id]);
+
+    console.log(`[DELETE USER SUCCESS] User ID: ${id}`);
+    res.json({ message: 'User deleted successfully' });
+  } catch (error) {
+    console.log(`[DELETE USER ERROR] ${error.message}`);
+    res.status(500).json({ message: error.message });
+  }
 });
 
 app.listen(process.env.PORT, () => {
-    console.log('----------------------------------------------------------------------');
-    console.log(`Server running on port ${process.env.PORT}`);
-    console.log('----------------------------------------------------------------------');
-    console.log(`Database connected at ${process.env.PGHOST}:${process.env.PGPORT}/${process.env.PGDATABASE} successfully`);
-    console.log('----------------------------------------------------------------------');
+  console.log('----------------------------------------------------------------------');
+  console.log(`Server running on port ${process.env.PORT}`);
+  console.log('----------------------------------------------------------------------');
+  console.log(`Database connected at ${process.env.PGHOST}:${process.env.PGPORT}/${process.env.PGDATABASE} successfully`);
+  console.log('----------------------------------------------------------------------');
 });
