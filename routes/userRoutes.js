@@ -20,7 +20,7 @@ const verifyToken = (req, res, next) => {
 };
 
 // Validate role
-const validRoles = ['hod', 'employee', 'admin'];
+const validRoles = ['hod', 'employee', 'admin', 'quality'];
 const validateRole = (role) => validRoles.includes(role);
 
 // Register
@@ -29,7 +29,7 @@ router.post('/register', verifyToken, async (req, res) => {
 
   const { name, email, contact_number, department_name, password, designation, role } = req.body;
 
-  if (!validateRole(role)) return res.status(400).json({ message: 'Invalid role. Must be hod, employee, or admin' });
+  if (!validateRole(role)) return res.status(400).json({ message: 'Invalid role. Must be hod, employee, admin, or quality' });
 
   try {
     const userExist = await pool.query('SELECT * FROM users WHERE email = $1', [email]);
@@ -55,7 +55,7 @@ router.get('/', verifyToken, async (req, res) => {
   if (req.user.role !== 'admin') return res.status(403).json({ message: 'Admin access required' });
 
   const { role } = req.query;
-  if (!validateRole(role)) return res.status(400).json({ message: 'Invalid role. Must be hod, employee, or admin' });
+  if (!validateRole(role)) return res.status(400).json({ message: 'Invalid role. Must be hod, employee, admin, or quality' });
 
   try {
     const users = await pool.query(
@@ -76,7 +76,7 @@ router.put('/:id', verifyToken, async (req, res) => {
   const { id } = req.params;
   const { name, email, contact_number, department_name, designation, role } = req.body;
 
-  if (!validateRole(role)) return res.status(400).json({ message: 'Invalid role. Must be hod, employee, or admin' });
+  if (!validateRole(role)) return res.status(400).json({ message: 'Invalid role. Must be hod, employee, admin, or quality' });
 
   try {
     const userExist = await pool.query('SELECT * FROM users WHERE id = $1', [id]);
