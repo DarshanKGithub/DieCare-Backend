@@ -2,6 +2,7 @@ const express = require('express');
 const cors = require('cors'); // 1. Import the cors package
 const registerRoutes = require('./routes/register');
 const loginRoutes = require('./routes/login');
+const partRoutes = require('./routes/parts');
 const winston = require('winston');
 require('dotenv').config();
 
@@ -45,6 +46,8 @@ app.use((req, res, next) => {
 // Routes
 app.use('/api/register', registerRoutes);
 app.use('/api/login', loginRoutes);
+app.use('/api/parts', partRoutes);
+
 
 // Error handling middleware
 app.use((err, req, res, next) => {
