@@ -3,6 +3,7 @@ const cors = require('cors'); // 1. Import the cors package
 const registerRoutes = require('./routes/register');
 const loginRoutes = require('./routes/login');
 const partRoutes = require('./routes/parts');
+const taskRoutes = require('./routes/tasks');
 const winston = require('winston');
 require('dotenv').config();
 
@@ -43,11 +44,15 @@ app.use((req, res, next) => {
   next();
 });
 
+// Add this line to serve uploaded images statically
+// This makes http://localhost:3001/uploads/images/your-image-name.jpg accessible
+app.use('/uploads', express.static('uploads'));
+
 // Routes
 app.use('/api/register', registerRoutes);
 app.use('/api/login', loginRoutes);
 app.use('/api/parts', partRoutes);
-
+app.use('/api/tasks', taskRoutes);
 
 // Error handling middleware
 app.use((err, req, res, next) => {
