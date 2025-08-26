@@ -53,7 +53,7 @@ router.post('/', limiter, async (req, res) => {
     return res.status(400).json({ error: 'Passwords do not match' });
   }
 
-  const validRoles = ['Admin', 'HOD', 'Employee', 'Quality'];
+  const validRoles = ['Admin', 'HOD', 'Employee', 'Quality','PDC'];
   if (!validRoles.includes(role)) {
     logger.warn(`Invalid role: ${role}`);
     return res.status(400).json({ error: 'Invalid role' });
@@ -146,7 +146,7 @@ router.put('/:id', verifyToken, async (req, res) => {
     return res.status(400).json({ error: 'Invalid phone number format' });
   }
 
-  if (role && !['Admin', 'HOD', 'Employee', 'Quality'].includes(role)) {
+  if (role && !['Admin', 'HOD', 'Employee', 'Quality','PDC'].includes(role)) {
     logger.warn(`Invalid role: ${role}`);
     return res.status(400).json({ error: 'Invalid role' });
   }
