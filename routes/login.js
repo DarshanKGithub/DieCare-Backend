@@ -23,9 +23,12 @@ const logger = winston.createLogger({
 
 // Rate limiter for login
 const limiter = rateLimit({
-  windowMs: process.env.RATE_LIMIT_WINDOW_MS,
-  max: process.env.RATE_LIMIT_MAX,
-  message: 'Too many requests, please try again later.',
+  windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS, 10),
+  max: parseInt(process.env.RATE_LIMIT_MAX, 10),
+  handler: (req, res) => {
+    logger.warn(`Rate limit exceeded for IP: ${req.ip}`);
+    res.status(429).json({ error: 'Too many requests, please try again later.' });
+  },
 });
 
 // Login Endpoint
@@ -117,7 +120,7 @@ router.post('/refresh-token', async (req, res) => {
     }
 
     // Fetch user
-    const userQuery = 'SELECT id, email, role FROM users WHERE id = $1';
+    const userQuery = 'SELECT id, email, name, role FROM users WHERE id = $1';
     const userResult = await pool.query(userQuery, [decoded.id]);
     if (userResult.rows.length === 0) {
       logger.warn(`User not found for id: ${decoded.id}`);
